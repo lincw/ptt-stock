@@ -5,6 +5,7 @@ import time
 import csv
 import argparse
 import os
+import re
 
 PTT_URL = "https://www.ptt.cc"
 BOARD = "/bbs/stock/index.html"
@@ -108,6 +109,54 @@ def fetch_article_content(url):
     return main_text, comments_text
 
 
+def clean_article_content(raw_content, max_length=2000, url=None):
+    import re
+    # Split into main and reply (after '--')
+    parts = raw_content.split('--\n', 1)
+    main = parts[0]
+    reply = parts[1] if len(parts) > 1 else ''
+
+    # Deduplicate lines in main
+    main_lines = main.splitlines()
+    seen_main = set()
+    unique_main = []
+    for line in main_lines:
+        lstripped = line.strip()
+        # Remove lines like '網址：...' or '文章網址：...' (with or without colon)
+        if re.match(r'^(網址|文章網址)[:：]?\s*https?://', lstripped):
+            continue
+        # Remove if line is exactly the article URL
+        if url and lstripped == url:
+            continue
+        if lstripped and lstripped not in seen_main:
+            unique_main.append(lstripped)
+            seen_main.add(lstripped)
+    
+    # Deduplicate lines in reply, and remove signature lines (e.g., '※ 發信站:')
+    reply_lines = reply.splitlines()
+    seen_reply = set()
+    unique_reply = []
+    for line in reply_lines:
+        lstripped = line.strip()
+        if lstripped.startswith('※ 發信站:') or lstripped.startswith('◆ From:') or lstripped == '':
+            continue  # Remove signature and empty lines
+        if lstripped and lstripped not in seen_reply:
+            unique_reply.append(lstripped)
+            seen_reply.add(lstripped)
+    
+    # Recombine, collapse multiple newlines, remove empty lines
+    cleaned = '\n'.join(unique_main)
+    if unique_reply:
+        cleaned += '\n--\n' + '\n'.join(unique_reply)
+    # Collapse multiple consecutive newlines
+    cleaned = re.sub(r'(\\n|\n){2,}', '\n', cleaned)
+    cleaned = cleaned.strip()
+    # Limit to max_length characters
+    if len(cleaned) > max_length:
+        cleaned = cleaned[:max_length] + '\n...（已截斷）'
+    return cleaned
+
+
 def main():
     parser = argparse.ArgumentParser(description='PTT Stock Board Scraper')
     parser.add_argument('--date', type=str, help='Target date in MM-DD format (e.g., 04-14). Defaults to today (Taiwan time).')
@@ -127,7 +176,7 @@ def main():
     # Fetch content for each article
     for art in articles:
         content, comments = fetch_article_content(art['url'])
-        art['content'] = content.replace('\n', '\\n').replace('\r', '')
+        art['content'] = clean_article_content(content, url=art['url']).replace('\n', '\\n').replace('\r', '')
         art['comments'] = comments.replace('\n', '\\n').replace('\r', '')
         art['year'] = year
     if articles:

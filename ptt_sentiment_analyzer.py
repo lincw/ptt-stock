@@ -16,13 +16,8 @@ import argparse
 import subprocess
 import sys
 
-# Optional: import httpx and OpenAI if you have xAI API access
-try:
-    from openai import OpenAI
-    import httpx
-except ImportError:
-    OpenAI = None
-    httpx = None
+from openai import OpenAI
+import httpx
 
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
