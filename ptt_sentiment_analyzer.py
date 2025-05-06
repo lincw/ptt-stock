@@ -39,11 +39,11 @@ class PTTStockSentimentAnalyzer:
             logger.error("XAI_API_KEY not found in environment variables or .env file.")
         # Set up httpx/OpenAI client if available
         if OpenAI and httpx and self.api_key:
-            http_client = httpx.Client(proxies=None, transport=httpx.HTTPTransport(retries=3))
+            transport = httpx.HTTPTransport(retries=3)
             self.client = OpenAI(
                 api_key=self.api_key,
                 base_url="https://api.x.ai/v1",
-                http_client=http_client
+                http_client=httpx.Client(transport=transport)
             )
         else:
             self.client = None
@@ -78,11 +78,24 @@ class PTTStockSentimentAnalyzer:
     def analyze_article(self, prompt: str, content: str) -> str:
         """Send combined content to xAI API (or simulate if not available)."""
         logger.info(f"Starting xAI analysis. Prompt length: {len(prompt)}. Content length: {len(content)}.")
+
+        # Extract date from content for context
+        date_context = ""
+        try:
+            # Try to find the date in the first article
+            import re
+            date_match = re.search(r'【日期】(\d+)/(\d+-\d+)', content)
+            if date_match:
+                full_date = f"{date_match.group(1)}/{date_match.group(2)}"
+                date_context = f"\n\n這些文章來自 {full_date}，請基於當時的市場環境進行分析。請勿嘗試提供即時股價數據，而是專注於分析文章內容。"
+        except Exception as e:
+            logger.warning(f"Could not extract date context: {e}")
+
         if self.client:
             try:
                 completion = self.client.chat.completions.create(
                     model="grok-3-beta",
-                    messages=[{"role": "user", "content": prompt + "\n\n" + content}]
+                    messages=[{"role": "user", "content": prompt + date_context + "\n\n" + content}]
                 )
                 logger.info("xAI analysis complete. Response received.")
                 logger.debug(f"xAI response preview: {completion.choices[0].message.content[:200]}")
